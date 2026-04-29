@@ -1,85 +1,134 @@
-# Tuberculosis recognition  
+# LungLens
 
-The PyTorch neural network model for tuberculosis classification.
+LungLens is a PyTorch convolutional neural network for classifying tuberculosis in chest X-ray images, served through a Streamlit web app where you can upload an image (or pick a preset example) and get an instant prediction.
 
-Live app: [tuberculosis-recognition.pandamia.org](https://tuberculosis-recognition.pandamia.org)
+> **Disclaimer:** this is a research/educational project, not a medical device. Its predictions must not be used for actual diagnosis.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Data](#data)
+- [Project Structure](#project-structure)
+- [Training](#training)
+- [Evaluation](#evaluation)
+- [Inference (Web App)](#inference-web-app)
+- [Docker Deployment](#docker-deployment)
+- [Research Notes](#research-notes)
+- [Results](#results)
+- [License](#license)
+
+## Overview
+
+- **Model** — a CNN with four convolutional blocks (two convolutional layers per block) followed by four fully connected layers for binary classification.
+- **Loss** — `BCEWithLogitsLoss` with an increased positive-class weight to counter class imbalance, plus a reduce-on-plateau learning-rate callback.
+- **App** — a Streamlit interface that loads the trained weights and classifies uploaded or example images, with the weights path configurable via the `MODEL_WEIGHTS_PATH` environment variable.
 
 ## Data
 
-[Tuberculosis (TB) Chest X-ray Database](https://www.kaggle.com/datasets/tawsifurrahman/tuberculosis-tb-chest-xray-dataset) from Kaggle.
+The model is trained on the public **Tuberculosis (TB) Chest X-ray Database** (available on Kaggle): roughly 3,500 normal images and 700 TB images — a significant class imbalance that shapes both training and evaluation (see [Research Notes](#research-notes)).
+
+## Project Structure
+
+```
+.
+├── app.py                       # Streamlit inference app
+├── tuberculosis_recognition/    # Model package (retains its original module name)
+│   ├── cnn_model.py             # CNN architecture
+│   ├── inference.py             # Image recognition wrapper
+│   └── paths.py                 # Path configuration
+├── scripts/
+│   ├── data_preparation.py      # Dataset extraction and preprocessing
+│   ├── train.py                 # Training loop
+│   └── evaluation.py            # Test-set evaluation
+├── source/                      # Data, example images, and model weights
+├── Dockerfile / docker-compose.yml / Caddyfile
+├── DEPLOY.md                    # Deployment guide
+└── requirements.txt
+```
 
 ## Training
 
-To train model you need:
-* Download the Tuberculosis dataset from the link above
-* Clone repository and install requirements:
-  * ```git clone https://github.com/PandaMia/Tuberculosis_recognition.git```
-  * ```cd Tuberculosis_recognition```
-  * ```pip install -r requirements.txt```
-* Run data preparation:  
-  * ```python -m scripts.data_preparation C:\Path\To\Archive\TB_database.zip```  
-* Train model:
-  * ```python -m scripts.train --epochs 20 --lr 0.0003 --bs 32```
-  
-The weights of the trained model will be saved in the file ```./source/model/model_weights.pth```
-  
-To evaluate model on test data you need:
-* Run evaluation script:
-  * ```python -m scripts.evaluation --bs 32```
+1. Download the TB Chest X-ray dataset archive from Kaggle.
+2. Install requirements:
 
-## Inference
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-To launch model on inference you could train your own model or download weights:  
-[https://drive.google.com/file/d/1wKYaVTo1j_Nd_6E-hMMwTVWCSUwYEzyZ/view?usp=sharing](https://drive.google.com/file/d/1wKYaVTo1j_Nd_6E-hMMwTVWCSUwYEzyZ/view?usp=sharing)  
+3. Run data preparation, pointing it at the downloaded archive:
 
-The downloaded weights must be placed on the path ```./source/model```
+   ```bash
+   python -m scripts.data_preparation C:\Path\To\Archive\TB_database.zip
+   ```
 
-Then run streamlit app:
-* ```streamlit run app.py```
+4. Train the model:
 
-In the app you could upload your image or choose preset image to test the model.
+   ```bash
+   python -m scripts.train --epochs 20 --lr 0.0003 --bs 32
+   ```
 
-![](https://github.com/PandaMia/Tuberculosis_recognition/blob/dev/source/data/images/app_example.jpg)
+The trained weights are saved to `./source/model/model_weights.pth`.
 
-## Research
+## Evaluation
 
-### Data preparation 
+Evaluate the trained model on the test split:
 
-I noticed that normal images have a spectrum of grayscale. But tuberculosis images can have different color spectrums.  
-In addition half of the tuberculosis images have only one channel.
+```bash
+python -m scripts.evaluation --bs 32
+```
 
-![](https://github.com/PandaMia/Tuberculosis_recognition/blob/dev/source/data/images/different_colors.png)
+Given the 5:1 class imbalance, plain accuracy is misleading (predicting "normal" for everything already scores ~83%). F1-score is the primary metric.
 
-So that the neural network doesn't use color as a feature for classification I bring images to a single color spectrum. I do this by transforming all images to one channel.
+## Inference (Web App)
 
-This dataset has a class imbalance: 3500 normal images and only 700 TB images. I take this into account when:
-* Training models: data augmentation; increase loss for TB class
-* Evaluate models. On this dataset accuracy metric is not suitable. The best choice is F1-score which is more reliable. Baseline accuracy for this task is 83%.
+Place trained weights at `./source/model/model_weights.pth` (or set the `MODEL_WEIGHTS_PATH` environment variable to their location), then run:
 
-### Model
+```bash
+streamlit run app.py
+```
 
-I am using a CNN model with four convolutional blocks (two convolutional layers in each block) and four fc-layers for classification.  
+In the app you can upload your own chest X-ray or choose a preset image to test the model.
 
-The loss function is BCEWithLogitsLoss. This binary crossentropy allow to increase the weights for imbalanced class.  
+## Docker Deployment
 
-I also use a callback to reduce learning rate when a plateau is reached.
+The repository includes a `Dockerfile`, `docker-compose.yml`, and `Caddyfile` for containerized deployment behind a reverse proxy:
 
-### Results
+```bash
+docker compose up --build
+```
 
-Accuracy on the test dataset is ```99.29%```, f1-score is ```97.87%```.   
+See [DEPLOY.md](DEPLOY.md) for the full deployment guide.
 
-Confusion matrix:  
-![](https://github.com/PandaMia/Tuberculosis_recognition/blob/dev/source/data/images/confusion_matrix.png)
+## Research Notes
 
-These are the same results as reached on validation dataset during training.
+### Data preparation
 
-I have a suggestion that achieved accuracy probably higher due to specific of tuberculosis scans.
-* Different color spectrums of TB and normal images (I tried to solve this problem when preparing the data)
-* Some TB images have white rectangles while normal images do not
-* A significant part of the TB images are labeled "L" and "R"
+Normal images in the dataset are grayscale, while TB images vary in color spectrum — and about half of the TB images have only one channel. To prevent the network from using color as a shortcut feature, all images are converted to a single channel during preparation.
 
-![](https://github.com/PandaMia/Tuberculosis_recognition/blob/dev/source/data/images/labeled.jpg)
+The class imbalance (3,500 normal vs. 700 TB) is addressed in two ways:
 
-These specifics aren't significant for tuberculosis classification. But it can be the feature for classification because only TB images have this specificity. The model trained on this dataset may perform worse on images without described features.
+- **Training** — data augmentation and an increased loss weight for the TB class.
+- **Evaluation** — F1-score instead of accuracy as the primary metric.
 
-The cause of differences between classes is probably the different resources (medical organizations) for data collection.
+### Dataset caveats
+
+The near-perfect scores likely overstate real-world performance, because the TB and normal images come from different sources (different medical organizations), leaving class-correlated artifacts the model can exploit:
+
+- Different color spectrums between TB and normal images (mitigated during preparation)
+- White rectangles present only in some TB images
+- "L"/"R" position markers on a significant share of TB images
+
+None of these artifacts are medically meaningful, but each is statistically predictive in this dataset. A model trained here may perform noticeably worse on images without these characteristics — a classic example of dataset bias in medical imaging.
+
+## Results
+
+| Metric | Test set |
+|---|---|
+| Accuracy | 99.29% |
+| F1-score | 97.87% |
+
+Test results match the validation results observed during training. Interpret them with the [dataset caveats](#dataset-caveats) above in mind.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
